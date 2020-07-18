@@ -1,0 +1,426 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+<style>
+  body {
+    padding: 100px;
+    width: 1000px;
+    margin: auto;
+    text-align: left;
+    font-weight: 300;
+    font-family: 'Open Sans', sans-serif;
+    color: #121212;
+  }
+  h1, h2, h3, h4 {
+    font-family: 'Source Sans Pro', sans-serif;
+  }
+</style>
+<title>CS 284A Ray Tracing</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<link href="https://fonts.googleapis.com/css?family=Open+Sans|Source+Sans+Pro" rel="stylesheet">
+</head>
+<body>
+<br />
+<h1 align="middle">CS 284A: Computer Graphics and Imaging, Spring 2018</h1>
+<h1 align="middle">Project 4: Cloth Simulator</h1>
+<h2 align="middle">Gauthier Dieppedalle, CS199-btx</h2>
+<script type="text/x-mathjax-config">
+  MathJax.Hub.Config({tex2jax: {inlineMath: [['$','$'], ['\\(','\\)']]}});
+</script>
+<script src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML" type="text/javascript"></script>
+
+<h2 align="middle">Overview</h2>
+<p>In this project I implemented a real-time cloth simulation made of springs and masses. In the first part of the project, we will build the datastructure to store all of the masses and springs, as well as applying the different constraints to each spring to be able to apply physical constraints to them. We then simulate the movement of the cloth by using numerical integration (first by computing the total force acting on each point mass then using Vervet integration to compute new point mass positions, and finally constraining the position updates). In the two last part of the projects, we handle collisions with other objects such as spheres and planes, and we then implement self-collisions.</p>
+
+<h2 align="middle">Part I: Masses and springs</h2>
+<p>Here are screenshots of how the wireframe looks like (1) without any shearing constraints, (2) with only shearing constraints, and (3) with all constraints:</p>
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="part1/withoutShearing.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/pinned2.json</code> wireframe without any shearing constraints.</figcaption>
+      </td>
+      <td>
+        <img src="part1/onlyShearing.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/pinned2.json</code> wireframe with only shearing constraints.</figcaption>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <img src="part1/allConstraints.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/pinned2.json</code> wireframe with all constraints.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<h2 align="middle">Part II: Simulation via numerical integration</h2>
+<p>In this part, I experimented with some the parameters in the simulation. Here is a screenshot with the default parameters:</p>
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="part2/default.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/pinned2.json</code> with default parameters.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<p>In the below screenshots the spring constant $ks$ is changed:</p>
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="part2/500ks.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/pinned2.json</code> with $ks=500N/m$.</figcaption>
+      </td>
+      <td>
+        <img src="part2/1000ks.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/pinned2.json</code> with $ks=1000N/m$.</figcaption>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <img src="part2/50000ks.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/pinned2.json</code> with $ks=50000N/m$.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<p>The spring constant represents the stiffness of the spring. In the case of the cloth, the spring constant defines how much the cloth stretches. From the screenshots above, if the $ks$ is small then the cloth is stretched more. if the $ks$ is high then the cloth is stretched less. We can see that when $ks=50000N/m$, the cloth almost preserves its rectangular shape. This observation can be explained by the fact that when $ks$ is small the point masses are pulled apart more, and when $ks$ is large the springs in the cloth will expand less. From a mathematical standpoint, we know that for a spring:</p>
+\[
+F=-kx
+\]
+<p>We also know that:</p>
+\[
+F=ma
+\]
+<p>By combining the equations we get:</p>
+\[
+ma=-kx
+\]
+<p>Thus, we will obtain that the acceleration is:</p>
+\[
+a=\frac{-kx}{m}
+\]
+<p>We can see from the above equation that if $k$ is large, then the acceleration is also large. We then know that:</p>
+\[
+a=\frac{\Delta v}{T}
+\]
+<p>Thus, a high acceleration must mean that the period is fast (and therefore the spring stretches less). Therefore a smaller $ks$  means that the cloth stretched more. A larger $ks$ means that the cloth stretches less.</p>
+
+<p>In the following screenshots, the density is changed:</p>
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="part2/4density.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/pinned2.json</code> with $density=4g/cm^2$.</figcaption>
+      </td>
+      <td>
+        <img src="part2/8density.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/pinned2.json</code> with $density=8g/cm^2$.</figcaption>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <img src="part2/30density.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/pinned2.json</code> with $density=30g/cm^2$.</figcaption>
+      </td>
+      <td>
+        <img src="part2/60density.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/pinned2.json</code> with $density=60g/cm^2$.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<p>From the above screenhots, we can see that as the density of the cloth increases, the cloth seems to be pulled down more by gravity. If a cloth has a higher density, then the cloth has a higher quantity of mass per area of volume. Therefore, a cloth that is dense will be pulled down by gravity more. This confirms the fact that a cloth with a lower density will be pulled down less by gravity. A cloth with a higher density will be pulled down more by gravity.</p>
+
+<p>In the following screenshots, the damping factor is changed:</p>
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="part2/0.1damping.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/pinned2.json</code> with $damping=0.1\%$.</figcaption>
+      </td>
+      <td>
+        <img src="part2/0.4damping.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/pinned2.json</code> with $damping=0.4\%$.</figcaption>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <img src="part2/0.8damping.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/pinned2.json</code> with $damping=0.8\%$.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+<p>According to Wikipedia, the damping ratio describes how much oscillations are in the system after a disturbance. In the cloth above, when the damping constant is high the cloth continues to travel less. In the images above, when the damping constant is low, the cloth continues to oscillate for a long time. With a higher damping constant, the cloth stops moving faster because the high damping constant reduces the amount of energy in the system (converts the energy into friction). A low damping constant will not remove energy from the system as fast and as a result the cloth will continue oscillating longer.</p>
+
+<h2 align="middle">Part III: Handling collisions with other objects</h2>
+<p>The following are screenshots of my shaded cloth from <code>scene/sphere.json</code> in its final resting state on the sphere using the default $ks = 5000$ as well as with $ks = 500$ and $ks = 50000$.</p>
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="part3/500.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/sphere.json</code> with $ks=500N/m$.</figcaption>
+      </td>
+      <td>
+        <img src="part3/5000.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/sphere.json</code> with $ks=5000N/m$.</figcaption>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <img src="part3/50000.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/sphere.json</code> with $ks=50000N/m$.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<p>As mentioned in the previous part, the variable $ks$ represents the stiffness of the cloth. If the $ks$ is small then the cloth is stretched more. if the $ks$ is high then the cloth is stretched less. In this example, when the $ks$ is small, the cloth seems to be stretching more downwards. When the $ks$ is large, the cloth seems to be stiffer and is not stretching as much around the ball.</p>
+
+<p>The following is a screenshot of my shaded cloth lying peacefully at rest on the plane:</p>
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="part3/plane.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/plane.json</code> with default parameters.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<h2 align="middle">Part IV: Handling self-collisions</h2>
+The following are screenshots of the self-collision. I asked Dillon and Megan if they looked correct and they told me yes:
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="part4/n1.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with default parameters at an early, initial self-collision.</figcaption>
+      </td>
+      <td>
+        <img src="part4/n2.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with default parameters at a later time.</figcaption>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <img src="part4/n3.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with default parameters at a more restful state.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<p>In the below screenshots the density is changed:</p>
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="part4/1d1.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $density = 1g/cm^2$ at an early, initial self-collision.</figcaption>
+      </td>
+      <td>
+        <img src="part4/1d2.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $density = 1g/cm^2$ at a later time.</figcaption>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <img src="part4/1d3.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $density = 1g/cm^2$ at a more restful state.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="part4/4d1.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $density = 4g/cm^2$ at an early, initial self-collision.</figcaption>
+      </td>
+      <td>
+        <img src="part4/4d2.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $density = 4g/cm^2$ at a later time.</figcaption>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <img src="part4/4d3.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $density = 4g/cm^2$ at a more restful state.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="part4/8d1.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $density = 8g/cm^2$ at an early, initial self-collision.</figcaption>
+      </td>
+      <td>
+        <img src="part4/8d2.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $density = 8g/cm^2$ at a later time.</figcaption>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <img src="part4/8d3.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $density = 8g/cm^2$ at a more restful state.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="part4/30d1.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $density = 30g/cm^2$ at an early, initial self-collision.</figcaption>
+      </td>
+      <td>
+        <img src="part4/30d2.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $density = 30g/cm^2$ at a later time.</figcaption>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <img src="part4/30d3.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $density = 30g/cm^2$ at a more restful state.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="part4/60d1.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $density = 60g/cm^2$ at an early, initial self-collision.</figcaption>
+      </td>
+      <td>
+        <img src="part4/60d2.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $density = 60g/cm^2$ at a later time.</figcaption>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <img src="part4/60d3.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $density = 60g/cm^2$ at a more restful state.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="part4/90d1.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $density = 90g/cm^2$ at an early, initial self-collision.</figcaption>
+      </td>
+      <td>
+        <img src="part4/90d2.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $density = 90g/cm^2$ at a later time.</figcaption>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <img src="part4/90d3.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $density = 90g/cm^2$ at a more restful state.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<p>I took a lot of screenshots for changing the density to be able to clearly see a difference between the different densities. We can see that when the density is small, the cloth spread out more when falling. When the density is high, the cloth folds into itself more. This can be explained by the fact that when the density is high, the object is more dense and therefore gravity plays an important role. Therefore a high density causes the cloth to fall down without having the other forces to have a significant effect.</p>
+
+<p>In the below screenshots the spring constant $ks$ is changed:</p>
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="part4/500k1.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $ks=500N/m$, initial self-collision.</figcaption>
+      </td>
+      <td>
+        <img src="part4/500k2.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $ks=500N/m$ at a later time.</figcaption>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <img src="part4/500k3.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $ks=500N/m$ at a more restful state.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="part4/50000k1.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $ks=50000N/m$, initial self-collision.</figcaption>
+      </td>
+      <td>
+        <img src="part4/50000k2.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $ks=50000N/m$ at a later time.</figcaption>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <img src="part4/50000k3.png" align="middle" width="400px"/>
+        <figcaption align="middle"><code>scene/selfCollision.json</code> with $ks=50000N/m$ at a more restful state.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<p>From the part above we know that the spring constant defines how much the cloth stretches. When $ks$ is small the cloth stretches more and as a result will have more wrinkles when touching the plane. A higher $ks$ will produce less wrinkles as can be seen in the screenshots above.</p>
+
+<h2 align="middle">Extra Credit</h2>
+<p> In this part, I added the ability to move spheres using the GUI around in the scene and have them collide with objects:</p>
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="EC/move.gif" align="middle" width="600px"/>
+        <figcaption align="middle"><code>scene/sphere.json</code> moving the sphere via GUI.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<p> I also added wind by adding a force to the particles in the direction of its normal, by taking the dot product of the normal and the wind's direction multiplied by its power (<a href="http://www.cs.huji.ac.il/~irush/cloth/">Source</a>). I then added that force to the total force of each point mass. In order to make it work uncomment the line 146 of cloth.cpp. The power of the wind is low (has a value of 1) in the image below and is in the x direction. </p>
+<div align="middle">
+  <table style="width=100%">
+    <tr>
+      <td>
+        <img src="EC/wind.gif" align="middle" width="600px"/>
+        <figcaption align="middle"><code>scene/sphere.json</code> with wind in the x direction.</figcaption>
+      </td>
+    </tr>
+  </table>
+</div>
+
+</body>
+</html>
